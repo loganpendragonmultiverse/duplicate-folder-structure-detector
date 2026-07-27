@@ -12,7 +12,7 @@ duplicate-trees examples/sample.json
 duplicate-trees examples/sample.json --format json --output report.json
 ```
 
-The example documents the v1 input shape. Existing report files are never overwritten. Source inputs are read-only except where the documented purpose explicitly creates a new output artifact.
+The example documents the input shape. Version 1.1 accepts `ignored_names` and `minimum_descendants`, then includes deterministic structural fingerprints and descendant counts in each duplicate group. Existing report files are never overwritten. Source inputs are read-only except where the documented purpose explicitly creates a new output artifact.
 
 ## Privacy and platforms
 

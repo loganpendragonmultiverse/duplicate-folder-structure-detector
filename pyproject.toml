@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "duplicate-folder-structure-detector"
-version = "1.0.0"
+version = "1.1.0"
 description = "Find repeated directory trees even when the files inside them differ."
 readme = "README.md"
 requires-python = ">=3.10"

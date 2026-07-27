@@ -14,6 +14,8 @@ def test_representative_sample_has_expected_result():
     report = analyze(data)
     assert report["version"] == 1 and report["project"] == PROJECT
     assert "duplicate_groups" in report and report["directories_scanned"] > 0
+    if report["duplicate_groups"]:
+        assert len(report["duplicate_groups"][0]["signature"]) == 16
     assert f'"project": "{PROJECT}"' in render_json(report)
     assert PROJECT.replace("-", " ").title() in render_markdown(report)
 
@@ -21,6 +23,19 @@ def test_representative_sample_has_expected_result():
 def test_missing_required_input_is_rejected():
     with pytest.raises(ValueError):
         analyze({})
+
+
+def test_custom_ignored_names_and_minimum_depth(tmp_path):
+    for base in (tmp_path / "one", tmp_path / "two"):
+        (base / "keep" / "nested").mkdir(parents=True)
+        (base / "cache" / "nested").mkdir(parents=True)
+    report = analyze({"root": str(tmp_path), "ignored_names": ["cache"], "minimum_descendants": 2})
+    assert "cache" in report["ignored_names"]
+    assert all(
+        "cache" not in path for group in report["duplicate_groups"] for path in group["structure"]
+    )
+    with pytest.raises(ValueError, match="positive"):
+        analyze({"root": str(tmp_path), "minimum_descendants": 0})
 
 
 def test_cli_json_and_output_safety(tmp_path, capsys):

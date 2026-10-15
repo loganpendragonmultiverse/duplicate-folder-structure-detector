@@ -36,3 +36,15 @@ python -m build
 The project is feature-complete for its documented v1 scope. Maintenance focuses on correctness, security, compatibility, and well-supported input improvements.
 
 Part of the [Logan Pendragon Forge open-source collection](https://www.loganpendragonforge.com/open-source/). Licensed under the [MIT License](LICENSE).
+
+## Explain two directory trees (1.2)
+
+Supply compare_roots with exactly two explicit directory paths instead of root:
+    {"compare_roots": ["/books/edition-a", "/books/edition-b"], "ignored_names": ["cache"]}
+The comparison lists shared, left_only, and right_only relative directory paths
+in sorted order. Files and their contents are ignored: equal topology is never
+a content-duplicate claim. Built-in and custom ignored names prune whole branches.
+Symlink roots are rejected; descendant symlinks are skipped and reported.
+Unreadable scans include errors and complete: false, with same_structure: null.
+Differences in incomplete reports describe observed paths only and may be incomplete.
+Source directories and files are never modified.

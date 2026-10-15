@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -66,8 +67,77 @@ def _duplicate_trees(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def compare_roots(data: dict[str, Any]) -> dict[str, Any]:
+    roots = data["compare_roots"]
+    if (
+        not isinstance(roots, list)
+        or len(roots) != 2
+        or not all(isinstance(p, str) and p for p in roots)
+    ):
+        raise ValueError("compare_roots must contain exactly two directory paths")
+    custom = data.get("ignored_names", [])
+    if not isinstance(custom, list) or not all(isinstance(name, str) for name in custom):
+        raise ValueError("ignored_names must be an array of names")
+    ignored = {".git", ".venv", "node_modules", "__pycache__", *custom}
+
+    def scan(raw: str) -> dict[str, Any]:
+        root = Path(raw)
+        if root.is_symlink() or not root.is_dir():
+            raise ValueError("comparison roots must be existing non-symlink directories")
+        root = root.resolve()
+        directories: set[str] = set()
+        errors = []
+        skipped = []
+        pending = [root]
+        while pending:
+            current = pending.pop()
+            try:
+                with os.scandir(current) as iterator:
+                    entries = sorted(iterator, key=lambda entry: entry.name)
+                for entry in entries:
+                    relative = (current / entry.name).relative_to(root).as_posix()
+                    if entry.name in ignored:
+                        continue
+                    if entry.is_symlink():
+                        skipped.append(relative)
+                    elif entry.is_dir(follow_symlinks=False):
+                        directories.add(relative)
+                        pending.append(current / entry.name)
+            except OSError as exc:
+                errors.append(
+                    {"path": current.relative_to(root).as_posix(), "error": type(exc).__name__}
+                )
+        return {
+            "root": str(root),
+            "directories": sorted(directories),
+            "errors": sorted(errors, key=lambda item: item["path"]),
+            "skipped_symlinks": sorted(skipped),
+            "complete": not errors,
+        }
+
+    left, right = (scan(raw) for raw in roots)
+    a, b = set(left["directories"]), set(right["directories"])
+    complete = left["complete"] and right["complete"]
+    return {
+        "comparison": {
+            "left": left,
+            "right": right,
+            "complete": complete,
+            "same_structure": a == b if complete else None,
+            "shared": sorted(a & b),
+            "left_only": sorted(a - b),
+            "right_only": sorted(b - a),
+        },
+        "ignored_names": sorted(ignored),
+    }
+
+
 def analyze(data: dict[str, Any]) -> dict[str, Any]:
-    return {"version": 1, "project": PROJECT, **_duplicate_trees(data)}
+    return {
+        "version": 1,
+        "project": PROJECT,
+        **(compare_roots(data) if "compare_roots" in data else _duplicate_trees(data)),
+    }
 
 
 def render_json(report: dict[str, Any]) -> str:

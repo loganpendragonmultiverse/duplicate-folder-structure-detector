@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0 — 2026-10-15
+
+- Explain shared and differing directory paths between two selected roots.
+- Report unreadable comparisons as incomplete and skip descendant symlinks.
+
 ## 1.1.0 - 2026-07-27
 
 - Added configurable ignored directory names and minimum descendant depth.

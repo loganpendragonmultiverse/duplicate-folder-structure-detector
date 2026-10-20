@@ -10,44 +10,80 @@ from typing import Any
 PROJECT = "duplicate-folder-structure-detector"
 
 
-def _require(data: dict[str, Any], key: str) -> Any:
-    value = data.get(key)
-    if value is None or value == "" or value == []:
-        raise ValueError(f"{key} is required")
-    return value
+def _ignored_names(data: dict[str, Any]) -> set[str]:
+    custom = data.get("ignored_names", [])
+    if not isinstance(custom, list) or not all(isinstance(name, str) for name in custom):
+        raise ValueError("ignored_names must be an array of names")
+    return {".git", ".venv", "node_modules", "__pycache__", *custom}
+
+
+def _scan_directories(raw: str, ignored: set[str]) -> dict[str, Any]:
+    root = Path(raw)
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("roots must be existing non-symlink directories")
+    root = root.resolve()
+    directories: set[str] = set()
+    errors: list[dict[str, str]] = []
+    skipped: list[str] = []
+    pending = [root]
+    while pending:
+        current = pending.pop()
+        try:
+            with os.scandir(current) as iterator:
+                entries = sorted(iterator, key=lambda entry: entry.name)
+        except OSError as exc:
+            errors.append(
+                {"path": current.relative_to(root).as_posix(), "error": type(exc).__name__}
+            )
+            continue
+        for entry in entries:
+            relative = (current / entry.name).relative_to(root).as_posix()
+            if entry.name in ignored:
+                continue
+            try:
+                if entry.is_symlink():
+                    skipped.append(relative)
+                elif entry.is_dir(follow_symlinks=False):
+                    directories.add(relative)
+                    pending.append(current / entry.name)
+            except OSError as exc:
+                errors.append({"path": relative, "error": type(exc).__name__})
+    return {
+        "root": str(root),
+        "directories": sorted(directories),
+        "errors": sorted(errors, key=lambda item: item["path"]),
+        "skipped_symlinks": sorted(skipped),
+        "complete": not errors,
+    }
 
 
 def _duplicate_trees(data: dict[str, Any]) -> dict[str, Any]:
-    root = Path(_require(data, "root")).resolve()
-    if not root.is_dir():
-        raise ValueError("root must be an existing directory")
-    ignored_names = {
-        ".git",
-        ".venv",
-        "node_modules",
-        "__pycache__",
-        *(str(name) for name in data.get("ignored_names", [])),
-    }
-    minimum_descendants = int(data.get("minimum_descendants", 1))
-    if minimum_descendants < 1:
-        raise ValueError("minimum_descendants must be positive")
-
-    def excluded(path: Path) -> bool:
-        return any(part in ignored_names for part in path.relative_to(root).parts)
-
+    raw = data.get("root")
+    if not isinstance(raw, str) or not raw:
+        raise ValueError("root must be a directory path")
+    ignored_names = _ignored_names(data)
+    minimum_descendants = data.get("minimum_descendants", 1)
+    if type(minimum_descendants) is not int or minimum_descendants < 1:
+        raise ValueError("minimum_descendants must be a positive integer")
+    scan = _scan_directories(raw, ignored_names)
+    root = Path(scan["root"])
+    directories = [root, *(root / name for name in scan["directories"])]
+    failed = [root / error["path"] for error in scan["errors"]]
     signatures: dict[tuple[str, ...], list[str]] = defaultdict(list)
-    for directory in [root, *sorted(path for path in root.rglob("*") if path.is_dir())]:
-        if excluded(directory):
+    unknown: list[str] = []
+    for directory in directories:
+        if any(path == directory or directory in path.parents for path in failed):
+            unknown.append(directory.relative_to(root).as_posix())
             continue
         descendants = tuple(
             sorted(
                 path.relative_to(directory).as_posix()
-                for path in directory.rglob("*")
-                if path.is_dir() and not excluded(path)
+                for path in directories
+                if directory in path.parents
             )
         )
         if len(descendants) >= minimum_descendants:
-            signatures[descendants].append(directory.relative_to(root).as_posix() or ".")
+            signatures[descendants].append(directory.relative_to(root).as_posix())
     groups: list[dict[str, Any]] = [
         {
             "directories": paths,
@@ -63,7 +99,11 @@ def _duplicate_trees(data: dict[str, Any]) -> dict[str, Any]:
         "duplicate_groups": groups,
         "minimum_descendants": minimum_descendants,
         "ignored_names": sorted(ignored_names),
-        "directories_scanned": sum(len(paths) for paths in signatures.values()),
+        "directories_scanned": len(directories),
+        "errors": scan["errors"],
+        "skipped_symlinks": scan["skipped_symlinks"],
+        "unknown_directories": sorted(unknown),
+        "complete": scan["complete"],
     }
 
 
@@ -75,47 +115,8 @@ def compare_roots(data: dict[str, Any]) -> dict[str, Any]:
         or not all(isinstance(p, str) and p for p in roots)
     ):
         raise ValueError("compare_roots must contain exactly two directory paths")
-    custom = data.get("ignored_names", [])
-    if not isinstance(custom, list) or not all(isinstance(name, str) for name in custom):
-        raise ValueError("ignored_names must be an array of names")
-    ignored = {".git", ".venv", "node_modules", "__pycache__", *custom}
-
-    def scan(raw: str) -> dict[str, Any]:
-        root = Path(raw)
-        if root.is_symlink() or not root.is_dir():
-            raise ValueError("comparison roots must be existing non-symlink directories")
-        root = root.resolve()
-        directories: set[str] = set()
-        errors = []
-        skipped = []
-        pending = [root]
-        while pending:
-            current = pending.pop()
-            try:
-                with os.scandir(current) as iterator:
-                    entries = sorted(iterator, key=lambda entry: entry.name)
-                for entry in entries:
-                    relative = (current / entry.name).relative_to(root).as_posix()
-                    if entry.name in ignored:
-                        continue
-                    if entry.is_symlink():
-                        skipped.append(relative)
-                    elif entry.is_dir(follow_symlinks=False):
-                        directories.add(relative)
-                        pending.append(current / entry.name)
-            except OSError as exc:
-                errors.append(
-                    {"path": current.relative_to(root).as_posix(), "error": type(exc).__name__}
-                )
-        return {
-            "root": str(root),
-            "directories": sorted(directories),
-            "errors": sorted(errors, key=lambda item: item["path"]),
-            "skipped_symlinks": sorted(skipped),
-            "complete": not errors,
-        }
-
-    left, right = (scan(raw) for raw in roots)
+    ignored = _ignored_names(data)
+    left, right = (_scan_directories(raw, ignored) for raw in roots)
     a, b = set(left["directories"]), set(right["directories"])
     complete = left["complete"] and right["complete"]
     return {
@@ -133,6 +134,8 @@ def compare_roots(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def analyze(data: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise TypeError("input must be a JSON object")
     return {
         "version": 1,
         "project": PROJECT,

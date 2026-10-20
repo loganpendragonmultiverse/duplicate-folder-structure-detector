@@ -48,3 +48,15 @@ Symlink roots are rejected; descendant symlinks are skipped and reported.
 Unreadable scans include errors and complete: false, with same_structure: null.
 Differences in incomplete reports describe observed paths only and may be incomplete.
 Source directories and files are never modified.
+
+## Incomplete scans and safe reports
+
+Both duplicate detection and two-root comparison prune ignored branches before
+reading them, reject symlink roots, and skip descendant symlinks. Unreadable paths
+appear in `errors`; `complete` is false and the command exits with status 1.
+Duplicate detection lists affected parent trees in `unknown_directories` and
+withholds their duplicate claims; fully observed sibling trees can still match.
+`directories_scanned` counts all observed directories including the selected root.
+`minimum_descendants` must be a positive integer, and `ignored_names` an array of
+strings. Reports use exclusive creation, preserving existing files and dangling
+symlinks. See [TESTING.md](TESTING.md).

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 — 2026-10-20
+
+- Use one explicit scanner in both modes, pruning ignored branches and reporting unreadable paths.
+- Withhold duplicate claims for incomplete trees while retaining verified sibling groups.
+- Reject symlink roots and malformed input controls; skip descendant links consistently.
+- Create reports exclusively and return status 1 for incomplete scans.
+
 ## 1.2.0 — 2026-10-15
 
 - Explain shared and differing directory paths between two selected roots.
